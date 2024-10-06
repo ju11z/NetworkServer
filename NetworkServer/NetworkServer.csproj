@@ -12,8 +12,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Reference Include="TCPClientExtensions">
-      <HintPath>..\..\NetworkStreamExtensions\NetworkStreamExtensions\bin\Release\net8.0\win-x64\TCPClientExtensions.dll</HintPath>
+    <Reference Include="NetworkExtensions">
+      <HintPath>..\..\NetworkExtensions\NetworkExtensions\bin\Release\net8.0\publish\win-x64\NetworkExtensions.dll</HintPath>
     </Reference>
   </ItemGroup>
 </Project>

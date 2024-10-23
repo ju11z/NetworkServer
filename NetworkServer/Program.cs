@@ -30,7 +30,7 @@ namespace NetworkServer
             {
                 int promisedQueriesAmount = 10;
 
-                Parallel.For(0, promisedQueriesAmount, (i, state) =>
+                while (true)
                 {
                     CustomResponce customResponce = new CustomResponce();
                     try
@@ -41,41 +41,35 @@ namespace NetworkServer
                             string jsonCustomQuery = client.ReadCustom();
                             Console.WriteLine(jsonCustomQuery);
 
-                            /*
                             try
                             {
                                 CustomQuery cq = JsonSerializer.Deserialize<CustomQuery>(jsonCustomQuery);
+                                customResponce.QueryNumber = cq.QueryNumber;
 
                                 if (cq.RandomInt % 15 == 0)
                                 {
-                                    customResponce.QueryNumber = cq.QueryNumber;
                                     customResponce.Responce = "foobar";
                                 }
                                 else if (cq.RandomInt % 5 == 0)
                                 {
-                                    customResponce.QueryNumber = cq.QueryNumber;
                                     customResponce.Responce = "foo";
 
                                 }
                                 else if (cq.RandomInt % 3 == 0)
                                 {
-                                    customResponce.QueryNumber = cq.QueryNumber;
                                     customResponce.Responce = "bar";
                                 }
 
-                                //client.WriteCustom(customResponce.ToJson());
-                                var d = 0;
-
-                                
+                                client.WriteCustom(customResponce.ToJson());
                             }
                             catch (Exception ex)
                             {
                                 customResponce.ResponseCode = ResponceCode.ClientError;
                                 customResponce.Responce = $"Error occured when deserialize message {jsonCustomQuery}: {ex.Message}";
                                 Console.WriteLine(customResponce.Responce);
-                                //client.WriteCustom(customResponce.ToJson());
+                                client.WriteCustom(customResponce.ToJson());
                             }
-                            */
+                            
                         }
                     }
                     catch (Exception e)
@@ -84,7 +78,8 @@ namespace NetworkServer
                         customResponce.Responce = $"Unexpected error occured when trying to read message from TCPClient: {e.Message}";
                         Console.WriteLine(customResponce.Responce);
                     }
-                });
+                }
+                    
             }
 
             Console.ReadLine();

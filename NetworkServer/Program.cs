@@ -2,6 +2,7 @@ using System.Net.Sockets;
 using System.Net;
 using TCPClientExtensions;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace NetworkServer
 {
@@ -12,72 +13,87 @@ namespace NetworkServer
 
         static void Main(string[] args)
         {
-            DoAdvancedServerWork();
+            Task2_DoAdvancedServerWork();
+            //Task1_DoSimpleServerWork();
         }
 
-
-        public static void DoAdvancedServerWork()
+        public static void Task2_DoAdvancedServerWork()
         {
             IPAddress localAdd = IPAddress.Parse(SERVER_IP);
             TcpListener listener = new TcpListener(localAdd, PORT_NO);
             Console.WriteLine("Listening...");
             listener.Start();
 
+            object locker = new object();
+
             using (TcpClient client = listener.AcceptTcpClient())
             {
-                string receivedMessage = client.ReadCustom();
-                int promisedQueriesAmount = Int32.Parse(receivedMessage);
+                int promisedQueriesAmount = 10;
 
                 Parallel.For(0, promisedQueriesAmount, (i, state) =>
                 {
                     CustomResponce customResponce = new CustomResponce();
                     try
                     {
-                        string jsonCustomQuery = client.ReadCustom();
-
-                        try
+                        //если убрать - Unexpected error occured when trying to read message from TCPClient: Array dimensions exceeded supported range.
+                        lock (locker)
                         {
-                            CustomQuery cq = JsonSerializer.Deserialize<CustomQuery>(jsonCustomQuery);
+                            string jsonCustomQuery = client.ReadCustom();
+                            Console.WriteLine(jsonCustomQuery);
 
-                            if (cq.RandomInt % 3 == 0)
+                            /*
+                            try
                             {
-                                customResponce.QueryNumber = cq.QueryNumber;
-                                customResponce.Responce = "foo";
-                                client.WriteCustom(customResponce.ToJson());
+                                CustomQuery cq = JsonSerializer.Deserialize<CustomQuery>(jsonCustomQuery);
+
+                                if (cq.RandomInt % 15 == 0)
+                                {
+                                    customResponce.QueryNumber = cq.QueryNumber;
+                                    customResponce.Responce = "foobar";
+                                }
+                                else if (cq.RandomInt % 5 == 0)
+                                {
+                                    customResponce.QueryNumber = cq.QueryNumber;
+                                    customResponce.Responce = "foo";
+
+                                }
+                                else if (cq.RandomInt % 3 == 0)
+                                {
+                                    customResponce.QueryNumber = cq.QueryNumber;
+                                    customResponce.Responce = "bar";
+                                }
+
+                                //client.WriteCustom(customResponce.ToJson());
+                                var d = 0;
+
+                                
                             }
-                            if (cq.RandomInt % 5 == 0)
+                            catch (Exception ex)
                             {
-                                customResponce.QueryNumber = cq.QueryNumber;
-                                customResponce.Responce = "bar";
-                                client.WriteCustom(customResponce.ToJson());
+                                customResponce.ResponseCode = ResponceCode.ClientError;
+                                customResponce.Responce = $"Error occured when deserialize message {jsonCustomQuery}: {ex.Message}";
+                                Console.WriteLine(customResponce.Responce);
+                                //client.WriteCustom(customResponce.ToJson());
                             }
-                            if (cq.RandomInt % 15 == 0)
-                            {
-                                customResponce.QueryNumber = cq.QueryNumber;
-                                customResponce.Responce = "foobar";
-                                client.WriteCustom(customResponce.ToJson());
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            customResponce.ResponseCode = ResponceCode.ClientError;
-                            customResponce.Responce = $"Error occured when deserialize message {jsonCustomQuery}: {ex.Message}";
-                            client.WriteCustom(customResponce.ToJson());
+                            */
                         }
                     }
                     catch (Exception e)
                     {
                         customResponce.ResponseCode = ResponceCode.ServerError;
                         customResponce.Responce = $"Unexpected error occured when trying to read message from TCPClient: {e.Message}";
-                        client.WriteCustom(customResponce.ToJson());
+                        Console.WriteLine(customResponce.Responce);
                     }
                 });
             }
 
+            Console.ReadLine();
+
             listener.Stop();
         }
 
-        public static void DoSimpleServerWork()
+
+        public static void Task1_DoSimpleServerWork()
         {
             IPAddress localAdd = IPAddress.Parse(SERVER_IP);
             TcpListener listener = new TcpListener(localAdd, PORT_NO);

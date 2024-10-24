@@ -28,48 +28,42 @@ namespace NetworkServer
 
             using (TcpClient client = listener.AcceptTcpClient())
             {
-                int promisedQueriesAmount = 10;
 
                 while (true)
                 {
                     CustomResponce customResponce = new CustomResponce();
                     try
                     {
-                        //если убрать - Unexpected error occured when trying to read message from TCPClient: Array dimensions exceeded supported range.
-                        lock (locker)
+                        string jsonCustomQuery = client.ReadCustom();
+                        Console.WriteLine(jsonCustomQuery);
+
+                        try
                         {
-                            string jsonCustomQuery = client.ReadCustom();
-                            Console.WriteLine(jsonCustomQuery);
+                            CustomQuery cq = JsonSerializer.Deserialize<CustomQuery>(jsonCustomQuery);
+                            customResponce.QueryNumber = cq.QueryNumber;
 
-                            try
+                            if (cq.RandomInt % 15 == 0)
                             {
-                                CustomQuery cq = JsonSerializer.Deserialize<CustomQuery>(jsonCustomQuery);
-                                customResponce.QueryNumber = cq.QueryNumber;
-
-                                if (cq.RandomInt % 15 == 0)
-                                {
-                                    customResponce.Responce = "foobar";
-                                }
-                                else if (cq.RandomInt % 5 == 0)
-                                {
-                                    customResponce.Responce = "foo";
-
-                                }
-                                else if (cq.RandomInt % 3 == 0)
-                                {
-                                    customResponce.Responce = "bar";
-                                }
-
-                                client.WriteCustom(customResponce.ToJson());
+                                customResponce.Responce = "foobar";
                             }
-                            catch (Exception ex)
+                            else if (cq.RandomInt % 5 == 0)
                             {
-                                customResponce.ResponseCode = ResponceCode.ClientError;
-                                customResponce.Responce = $"Error occured when deserialize message {jsonCustomQuery}: {ex.Message}";
-                                Console.WriteLine(customResponce.Responce);
-                                client.WriteCustom(customResponce.ToJson());
+                                customResponce.Responce = "foo";
+
                             }
-                            
+                            else if (cq.RandomInt % 3 == 0)
+                            {
+                                customResponce.Responce = "bar";
+                            }
+
+                            client.WriteCustom(customResponce.ToJson());
+                        }
+                        catch (Exception ex)
+                        {
+                            customResponce.ResponseCode = ResponceCode.ClientError;
+                            customResponce.Responce = $"Error occured when deserialize message {jsonCustomQuery}: {ex.Message}";
+                            Console.WriteLine(customResponce.Responce);
+                            client.WriteCustom(customResponce.ToJson());
                         }
                     }
                     catch (Exception e)
@@ -79,7 +73,7 @@ namespace NetworkServer
                         Console.WriteLine(customResponce.Responce);
                     }
                 }
-                    
+
             }
 
             Console.ReadLine();

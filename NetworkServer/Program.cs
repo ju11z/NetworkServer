@@ -13,9 +13,12 @@ namespace NetworkServer
 
         static void Main(string[] args)
         {
-            Task2_DoAdvancedServerWork();
+            
+            //Task2_DoAdvancedServerWork();
             //Task1_DoSimpleServerWork();
         }
+
+        
 
         public static void Task2_DoAdvancedServerWork()
         {
@@ -105,5 +108,7 @@ namespace NetworkServer
             client.Close();
             listener.Stop();
         }
+
+
     }
 }

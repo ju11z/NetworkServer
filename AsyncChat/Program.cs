@@ -3,6 +3,8 @@ using System.Net;
 using TCPClientExtensions;
 using System.Net.Http;
 using System.Collections.Concurrent;
+using System.Text;
+using System.Collections.Generic;
 
 namespace AsyncChat
 {
@@ -19,6 +21,13 @@ namespace AsyncChat
             await Task3_DoAsyncChatServerWork();
         }
 
+        //if broadcast message from cl1 received -
+        //wait when read/write operations on cl1 and cl2 streams will end.
+        //queue operations
+        //lock cl2 and cl3 streams
+        //write to their streams broascast messages
+        //unlock
+
         public static async Task Task3_DoAsyncChatServerWork()
         {
             IPAddress localAdd = IPAddress.Parse(SERVER_IP);
@@ -31,30 +40,51 @@ namespace AsyncChat
 
             while (true)
             {
-                await AddNewClientAsync(listener);
+                ClientEntity clientEntity = await AddNewClientAsync(listener);
 
-                foreach(var clientData in _clients)
+                Task.Run(() => ProcessClientAsync(clientEntity));
+            }
+        }
+
+        private static async Task<ClientEntity> AddNewClientAsync(TcpListener listener)
+        {
+            TcpClient newClient = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
+            string login = ExtendedTCPClient.GenerateRandomLatinString(3);
+
+            Console.WriteLine($"Adding client {login}");
+
+            ClientEntity clientEntity = new ClientEntity(newClient, login);
+            _clients.TryAdd(login, clientEntity);
+
+            return clientEntity;
+        }
+
+        public static async Task ProcessClientAsync(ClientEntity clientEntity)
+        {
+            while (true)
+            {
+                string message = await GetClientInputAsync(clientEntity);
+
+                if(message.Length!=0 && message != null)
                 {
-                    Task.Run(() => ProcessClientAsync(clientData.Value.Client));
+                    BroadcastMessageAsync(clientEntity, message);
                 }
             }
         }
 
-        private static async Task AddNewClientAsync(TcpListener listener)
+        public static async Task<string> GetClientInputAsync(ClientEntity clientEntity)
         {
-            TcpClient newClient = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
+            string message = await clientEntity.Client.ReadCustomAsync(false);
 
-            _clients.TryAdd("aboba", new ClientEntity(newClient));
+            if (message.Length != 0 && message != null)
+            {
+                Console.WriteLine($"Received message {message} from client {clientEntity.Login}");
+            }
+            
+            return message;
         }
 
-        public static async Task ProcessClientAsync(TcpClient client)
-        {
-            string message =  client.ReadCustom();
-
-            Task.Run(()=> BroadcastMessageAsync(message));
-        }
-
-
+        /*
         private static void HandleClient(TcpClient client)
         {
             client.WriteCustom("Please input your login", false);
@@ -81,13 +111,19 @@ namespace AsyncChat
                 }
             }
         }
-
-        protected internal static async Task BroadcastMessageAsync(string message)
+        */
+        public static void BroadcastMessageAsync(ClientEntity sender, string message)
         {
+            List<Task> broadcastToClientTasks = new List<Task>();
             foreach (var client in _clients)
             {
-                 client.Value.Client.WriteCustom(message);
+                Console.WriteLine($"Sending broadcast message {message} to client {client.Value.Login}");
+                //если добавлять таску в список и потом с помощью WaitAll всех их выполнять, то клиенты виснут: не получают сообщения и не высылают их
+                //broadcastToClientTasks.Add(new Task(() => client.Value.Client.WriteCustomAsync(message)));
+                Task.Run(() => client.Value.Client.WriteCustomAsync(message, false));
             }
+            //заблокировать потоки клиентов для записи, пока туда пишет сервер
+            //Task.WaitAll(broadcastToClientTasks.ToArray());
         }
 
         public class ClientEntity
@@ -96,10 +132,12 @@ namespace AsyncChat
             public string HostName { get; init; }
             public int Port { get; init; }
             public TcpClient Client { get; init; }
+            public string Login { get; init; }
 
-            public ClientEntity(TcpClient client)
+            public ClientEntity(TcpClient client, string login)
             {
                 Client = client;
+                Login = login;
 
                 IPEndPoint endPoint = (IPEndPoint)client.Client.RemoteEndPoint;
 

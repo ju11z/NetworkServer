@@ -5,6 +5,9 @@ using System.Net.Http;
 using System.Collections.Concurrent;
 using System.Text;
 using System.Collections.Generic;
+using System.Text.Json.Nodes;
+using System.Text.Json;
+using System.Numerics;
 
 namespace AsyncChat
 {
@@ -12,6 +15,7 @@ namespace AsyncChat
     {
         const int PORT_NO = 5000;
         const string SERVER_IP = "127.0.0.1";
+        private static Random random = new Random();    
 
         private static ConcurrentDictionary<string, ClientEntity> _clients = new ConcurrentDictionary<string, ClientEntity>();
         private static List<MessageData> _messageData = new List<MessageData>();
@@ -20,13 +24,6 @@ namespace AsyncChat
         {
             await Task3_DoAsyncChatServerWork();
         }
-
-        //if broadcast message from cl1 received -
-        //wait when read/write operations on cl1 and cl2 streams will end.
-        //queue operations
-        //lock cl2 and cl3 streams
-        //write to their streams broascast messages
-        //unlock
 
         public static async Task Task3_DoAsyncChatServerWork()
         {
@@ -48,28 +45,83 @@ namespace AsyncChat
 
         private static async Task<ClientEntity> AddNewClientAsync(TcpListener listener)
         {
-            TcpClient newClient = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
-            string login = ExtendedTCPClient.GenerateRandomLatinString(3);
+            TcpClient client = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
+
+            string login = await HandleNewClientLoginAsync(client);
 
             Console.WriteLine($"Adding client {login}");
 
-            ClientEntity clientEntity = new ClientEntity(newClient, login);
-            _clients.TryAdd(login, clientEntity);
+            ClientEntity newClient = new ClientEntity(client, login);
+            newClient.IsLoggedIn = true;
+            _clients.TryAdd(login, newClient);
 
-            return clientEntity;
+            return newClient;
+        }
+
+        private static async Task<string> HandleNewClientLoginAsync(TcpClient client)
+        {
+            bool isLoginSucceeded = false;
+            
+            string login = await AskForLoginAsync(client, "Please, input your login.");
+
+            while (!isLoginSucceeded)
+            {
+                if (login == "all")
+                {
+                    login = await AskForLoginAsync(client, "'All' word is reserved and can't be used as login. Please, input new login.");
+                }
+                else if (_clients.ContainsKey(login))
+                {
+                    login = await AskForLoginAsync(client, $"There is already a user with login {login}. Please, input new login.");
+                }
+                else
+                {
+                    isLoginSucceeded = true;
+
+                    ServerLoginResponce succesLoginResponce = new ServerLoginResponce($"You were successfully logged in as {login}.", true);
+
+                    await client.WriteCustomAsync(JsonSerializer.Serialize(succesLoginResponce), false);
+
+                    break;
+                }
+            }
+
+            return login;
+        }
+
+        public static async Task<string> AskForLoginAsync(TcpClient client, string message)
+        {
+            ServerLoginResponce loginQuery = new ServerLoginResponce(message, false);
+
+            await client.WriteCustomAsync(JsonSerializer.Serialize(loginQuery), false);
+
+            string loginResponceMessage = await client.ReadCustomAsync(false);
+            ClientLoginResponce loginResponce = JsonSerializer.Deserialize<ClientLoginResponce>(loginResponceMessage);
+            string login = loginResponce.Login;
+
+            return login;
         }
 
         public static async Task ProcessClientAsync(ClientEntity clientEntity)
         {
+            if (!clientEntity.IsLoggedIn)
+                return;
+
             while (true)
             {
-                string message = await GetClientInputAsync(clientEntity);
+                string message = await GenerateRandomMessage();
 
                 if(message.Length!=0 && message != null)
                 {
                     BroadcastMessageAsync(clientEntity, message);
                 }
             }
+        }
+
+        public static async Task<string> GenerateRandomMessage()
+        {
+            await Task.Delay(random.Next(2000,6000));
+            return ExtendedTCPClient.GenerateRandomLatinString(10);
         }
 
         public static async Task<string> GetClientInputAsync(ClientEntity clientEntity)
@@ -84,34 +136,6 @@ namespace AsyncChat
             return message;
         }
 
-        /*
-        private static void HandleClient(TcpClient client)
-        {
-            client.WriteCustom("Please input your login", false);
-
-            bool isUserLogedIn = false;
-
-            while (!isUserLogedIn)
-            {
-                string login = client.ReadCustom(false);
-
-                if (_clients.ContainsKey(login))
-                {
-                    client.WriteCustom("The name is already taken. Please input another one.", false);
-                }
-                else if (login == "all")
-                {
-                    client.WriteCustom("The word 'all' is reserved and cannot be used for login. Please input another one.", false);
-                }
-                else
-                {
-                    //_clients.Add(login, new ClientEntity(client));
-
-                    isUserLogedIn = true;
-                }
-            }
-        }
-        */
         public static void BroadcastMessageAsync(ClientEntity sender, string message)
         {
             List<Task> broadcastToClientTasks = new List<Task>();
@@ -122,7 +146,7 @@ namespace AsyncChat
                 //broadcastToClientTasks.Add(new Task(() => client.Value.Client.WriteCustomAsync(message)));
                 Task.Run(() => client.Value.Client.WriteCustomAsync(message, false));
             }
-            //заблокировать потоки клиентов для записи, пока туда пишет сервер
+            //заблокировать потоки клиентов для записи, пока туда пишет сервер?
             //Task.WaitAll(broadcastToClientTasks.ToArray());
         }
 
@@ -133,6 +157,7 @@ namespace AsyncChat
             public int Port { get; init; }
             public TcpClient Client { get; init; }
             public string Login { get; init; }
+            public bool IsLoggedIn { get; set; } = false;
 
             public ClientEntity(TcpClient client, string login)
             {

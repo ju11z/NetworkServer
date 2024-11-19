@@ -15,7 +15,7 @@ namespace AsyncChat
     {
         const int PORT_NO = 5000;
         const string SERVER_IP = "127.0.0.1";
-        private static Random random = new Random();    
+        private static Random random = new Random();
 
         private static ConcurrentDictionary<string, ClientEntity> _clients = new ConcurrentDictionary<string, ClientEntity>();
         private static List<MessageData> _messageData = new List<MessageData>();
@@ -61,7 +61,7 @@ namespace AsyncChat
         private static async Task<string> HandleNewClientLoginAsync(TcpClient client)
         {
             bool isLoginSucceeded = false;
-            
+
             string login = await AskForLoginAsync(client, "Please, input your login.");
 
             while (!isLoginSucceeded)
@@ -70,15 +70,15 @@ namespace AsyncChat
                 {
                     login = await AskForLoginAsync(client, "'All' word is reserved and can't be used as login. Please, input new login.");
                 }
-                else if (_clients.ContainsKey(login))
+                else if (_clients.ContainsKey(login) && _clients[login].IsLoggedIn)
                 {
-                    login = await AskForLoginAsync(client, $"There is already a user with login {login}. Please, input new login.");
+                    login = await AskForLoginAsync(client, $"User with {login} is already logged in. Please, input new login.");
                 }
                 else
                 {
                     isLoginSucceeded = true;
 
-                    ServerLoginResponce succesLoginResponce = new ServerLoginResponce($"You were successfully logged in as {login}.", true);
+                    ServerLoginResponce succesLoginResponce = new ServerLoginResponce($"You were successfully logged in as {login}.", true, login);
 
                     await client.WriteCustomAsync(JsonSerializer.Serialize(succesLoginResponce), false);
 
@@ -104,36 +104,89 @@ namespace AsyncChat
 
         public static async Task ProcessClientAsync(ClientEntity clientEntity)
         {
-            if (!clientEntity.IsLoggedIn)
-                return;
-
-            while (true)
+            if (clientEntity.IsLoggedIn)
             {
-                string message = await GenerateRandomMessage();
-
-                if(message.Length!=0 && message != null)
+                while (true)
                 {
-                    BroadcastMessageAsync(clientEntity, message);
+                    string message = await clientEntity.Client.ReadCustomAsync(false);
+
+                    if (message != null && message.Length != 0)
+                    {
+                        
+                        bool isGetNewMessagesRequest = await HandleGetNewMessagesRequest(message, clientEntity);
+                        if (isGetNewMessagesRequest)
+                            continue;
+
+                        bool isSendMessageRequest = await HandleSendMessageRequest(message, clientEntity);
+                        if (isGetNewMessagesRequest)
+                            continue;
+                        
+                        await HandleClientDefaultResponce(message, clientEntity);
+                    }
                 }
             }
         }
 
-        public static async Task<string> GenerateRandomMessage()
+        private static async Task HandleClientDefaultResponce(string message, ClientEntity clientEntity)
         {
-            await Task.Delay(random.Next(2000,6000));
-            return ExtendedTCPClient.GenerateRandomLatinString(10);
+            Console.WriteLine($"Client {clientEntity.Login} message : {message}");
         }
 
-        public static async Task<string> GetClientInputAsync(ClientEntity clientEntity)
+        private static async Task<bool> HandleSendMessageRequest(string message, ClientEntity clientEntity)
         {
-            string message = await clientEntity.Client.ReadCustomAsync(false);
+            bool isSendMessageRequest = false;
 
-            if (message.Length != 0 && message != null)
+            try
             {
-                Console.WriteLine($"Received message {message} from client {clientEntity.Login}");
+                ClientMessageData clientMessageData = JsonSerializer.Deserialize<ClientMessageData>(message);
+
+                isSendMessageRequest = true;
+                try
+                {
+                    TcpClient receiverClient = _clients.First(c => c.Key.Trim().Equals(clientMessageData.LoginFrom)).Value.Client;
+
+                    Console.WriteLine($"Sending message {message} from client {clientMessageData.LoginFrom} to client {clientMessageData.LoginTo}");
+
+                    await receiverClient.WriteCustomAsync($"{clientMessageData.TimeSent} {clientMessageData.LoginFrom} : {message}", false);
+                }
+                catch
+                {
+                    await clientEntity.Client.WriteCustomAsync($"Cant send message to client with login {clientMessageData.LoginTo}, because it wasnt found.", false);
+                }
             }
-            
-            return message;
+            catch
+            {
+
+            }
+
+            return isSendMessageRequest;
+        }
+
+
+        private static async Task<bool> HandleGetNewMessagesRequest(string message, ClientEntity clientEntity)
+        {
+            bool isGetNewMessageRequest = false;
+
+            try
+            {
+                AskForNewMessagesRequest askForNewMessagesRequest = JsonSerializer.Deserialize<AskForNewMessagesRequest>(message);
+
+                isGetNewMessageRequest = true;
+
+                Console.WriteLine($"Received get new messages request from client {clientEntity.Login}");
+            }
+            catch
+            {
+
+            }
+
+            return isGetNewMessageRequest;
+        }
+
+        public static async Task<string> GenerateRandomMessage()
+        {
+            await Task.Delay(random.Next(2000, 6000));
+            return ExtendedTCPClient.GenerateRandomLatinString(10);
         }
 
         public static void BroadcastMessageAsync(ClientEntity sender, string message)
